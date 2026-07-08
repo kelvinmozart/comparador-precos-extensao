@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Comparador de Preços Local",
+  "version": "1.0.0",
+  "description": "Extensão inicial com um card flutuante para páginas de produtos.",
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": [
+        "src/productDetector.js",
+        "src/widget.js",
+        "src/content.js"
+      ],
+      "css": ["src/widget.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+.price-compare-widget,
+.price-compare-widget * {
+  box-sizing: border-box;
+}
+
+.price-compare-widget {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 999999;
+  width: min(292px, calc(100vw - 32px));
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  color: #111827;
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+
+.price-compare-widget__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.price-compare-widget__title {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.price-compare-widget__close {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font: 18px/1 Arial, Helvetica, sans-serif;
+}
+
+.price-compare-widget__close:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.price-compare-widget__close:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.price-compare-widget__status {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 13px;
+}
+
+.price-compare-widget[data-state="loading"] .price-compare-widget__status {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.price-compare-widget[data-state="detected"] .price-compare-widget__status {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.price-compare-widget[data-state="error"] .price-compare-widget__status {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.price-compare-widget__details {
+  display: grid;
+  gap: 8px;
+}
+
+.price-compare-widget__row {
+  display: grid;
+  gap: 2px;
+}
+
+.price-compare-widget__label {
+  color: #17181a;
+  font-size: 12px;
+}
+
+.price-compare-widget__value {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.price-compare-widget[data-state="loading"] .price-compare-widget__value,
+.price-compare-widget[data-state="not_found"] .price-compare-widget__value,
+.price-compare-widget[data-state="error"] .price-compare-widget__value {
+  color: #6b7280;
+  font-weight: 400;
+}
+
+@media (max-width: 420px) {
+  .price-compare-widget {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+  }
+}
