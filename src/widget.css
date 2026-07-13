@@ -3,17 +3,25 @@
   box-sizing: border-box;
 }
 
+.price-compare-widget [hidden] {
+  display: none !important;
+}
+
 .price-compare-widget {
   position: fixed;
   right: 16px;
   bottom: 16px;
   z-index: 999999;
-  width: min(292px, calc(100vw - 32px));
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.8);
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.97);
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
   color: #111827;
   font-family: Arial, Helvetica, sans-serif;
   line-height: 1.4;
@@ -25,15 +33,25 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
 }
 
 .price-compare-widget__title {
+  min-width: 0;
   color: #111827;
   font-size: 14px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.price-compare-widget__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.price-compare-widget__toggle,
 .price-compare-widget__close {
   display: inline-grid;
   flex: 0 0 auto;
@@ -50,14 +68,31 @@
   font: 18px/1 Arial, Helvetica, sans-serif;
 }
 
+.price-compare-widget__toggle {
+  font-size: 16px;
+}
+
+.price-compare-widget__toggle:hover,
 .price-compare-widget__close:hover {
   background: #f3f4f6;
   color: #111827;
 }
 
-.price-compare-widget__close:focus-visible {
+.price-compare-widget__toggle:focus-visible,
+.price-compare-widget__close:focus-visible,
+.price-compare-widget__offer-link:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
+}
+
+.price-compare-widget__body {
+  max-height: calc(100vh - 92px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.price-compare-widget[data-minimized="true"] .price-compare-widget__body {
+  display: none;
 }
 
 .price-compare-widget__status {
@@ -69,24 +104,39 @@
   font-size: 13px;
 }
 
-.price-compare-widget[data-state="loading"] .price-compare-widget__status {
+.price-compare-widget[data-state="loading"] .price-compare-widget__status,
+.price-compare-widget[data-state="comparing"] .price-compare-widget__status {
   background: #eff6ff;
   color: #1d4ed8;
 }
 
-.price-compare-widget[data-state="detected"] .price-compare-widget__status {
+.price-compare-widget[data-state="detected"] .price-compare-widget__status,
+.price-compare-widget[data-state="compared"] .price-compare-widget__status {
   background: #ecfdf5;
   color: #047857;
 }
 
-.price-compare-widget[data-state="error"] .price-compare-widget__status {
+.price-compare-widget[data-state="no_offers"] .price-compare-widget__status {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.price-compare-widget[data-state="error"] .price-compare-widget__status,
+.price-compare-widget[data-state="compare_error"] .price-compare-widget__status {
   background: #fef2f2;
   color: #b91c1c;
 }
 
 .price-compare-widget__details {
   display: grid;
+  gap: 10px;
+}
+
+.price-compare-widget__product {
+  display: grid;
   gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .price-compare-widget__row {
@@ -94,9 +144,14 @@
   gap: 2px;
 }
 
-.price-compare-widget__label {
-  color: #17181a;
+.price-compare-widget__label,
+.price-compare-widget__section-title {
+  color: #4b5563;
   font-size: 12px;
+}
+
+.price-compare-widget__section-title {
+  font-weight: 700;
 }
 
 .price-compare-widget__value {
@@ -106,6 +161,13 @@
   overflow-wrap: anywhere;
 }
 
+.price-compare-widget__product-name {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .price-compare-widget[data-state="loading"] .price-compare-widget__value,
 .price-compare-widget[data-state="not_found"] .price-compare-widget__value,
 .price-compare-widget[data-state="error"] .price-compare-widget__value {
@@ -113,10 +175,108 @@
   font-weight: 400;
 }
 
+.price-compare-widget__offers {
+  display: grid;
+  gap: 8px;
+}
+
+.price-compare-widget__offers-list {
+  display: grid;
+  gap: 8px;
+  max-height: 270px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.price-compare-widget__offer {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.price-compare-widget__offer-header,
+.price-compare-widget__offer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.price-compare-widget__offer-store {
+  min-width: 0;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price-compare-widget__offer-price {
+  flex: 0 0 auto;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.price-compare-widget__offer-title {
+  display: -webkit-box;
+  color: #111827;
+  font-size: 12px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.price-compare-widget__offer-confidence {
+  min-width: 0;
+  color: #6b7280;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price-compare-widget__offer-link {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.price-compare-widget__offer-link:hover {
+  background: #374151;
+}
+
+.price-compare-widget__offer-link.is-disabled {
+  background: #e5e7eb;
+  color: #6b7280;
+  cursor: default;
+}
+
+.price-compare-widget__updated-at {
+  margin: 0;
+  color: #6b7280;
+  font-size: 11px;
+}
+
 @media (max-width: 420px) {
   .price-compare-widget {
     right: 12px;
     bottom: 12px;
     width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+
+  .price-compare-widget__body {
+    max-height: calc(100vh - 84px);
   }
 }

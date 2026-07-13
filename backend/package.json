@@ -1,0 +1,17 @@
+{
+  "name": "comparador-precos-backend",
+  "version": "1.0.0",
+  "description": "Backend local simples para mockar comparacao de precos.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "keywords": [
+    "comparador",
+    "precos",
+    "mock",
+    "extensao"
+  ],
+  "author": "",
+  "license": "MIT"
+}

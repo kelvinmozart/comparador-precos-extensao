@@ -15,6 +15,7 @@
     lastUrl: window.location.href,
     widget: null,
     runDetection: null,
+    runId: 0,
   };
 
   window[STATE_KEY] = state;
@@ -67,6 +68,15 @@
     return state.widget;
   }
 
+  function removeWidget() {
+    if (state.widget && typeof state.widget.close === "function") {
+      state.widget.close();
+    }
+
+    document.getElementById(WIDGET_ID)?.remove();
+    state.widget = null;
+  }
+
   function detectProduct() {
     const detector = window.productDetector;
 
@@ -77,35 +87,74 @@
     return detector.detectProductFromPage(document, window.location);
   }
 
-  function updateWidget(result) {
-    const widget = getWidget();
-    if (!widget) {
-      return;
+  function comparePrices(product) {
+    const apiClient = window.priceCompareApi;
+
+    if (typeof apiClient?.comparePrices === "function") {
+      return apiClient.comparePrices(product);
     }
 
-    if (result?.detected) {
-      widget.setState("detected", result);
-      return;
+    if (typeof window.comparePrices === "function") {
+      return window.comparePrices(product);
     }
 
-    widget.setState("not_found", result);
+    throw new Error("API client is not available.");
+  }
+
+  function isCurrentRun(runId, widget) {
+    return (
+      state.runId === runId &&
+      state.widget === widget &&
+      widget?.root &&
+      document.getElementById(WIDGET_ID) === widget.root
+    );
   }
 
   function runDetection() {
-    ensureWidgetStyles();
+    const runId = state.runId + 1;
+    state.runId = runId;
 
-    const widget = getWidget();
-    if (!widget) {
-      return;
-    }
+    removeWidget();
 
-    widget.setState("loading");
+    window.setTimeout(async () => {
+      let product = null;
 
-    window.setTimeout(() => {
       try {
-        updateWidget(detectProduct());
+        product = detectProduct();
       } catch (error) {
-        widget.setState("error");
+        removeWidget();
+        return;
+      }
+
+      if (state.runId !== runId) {
+        return;
+      }
+
+      if (!product?.detected) {
+        removeWidget();
+        return;
+      }
+
+      ensureWidgetStyles();
+
+      const widget = getWidget();
+      if (!widget || state.runId !== runId) {
+        return;
+      }
+
+      widget.setState("detected", product);
+      widget.setState("comparing", product);
+
+      try {
+        const comparison = await comparePrices(product);
+
+        if (isCurrentRun(runId, widget)) {
+          widget.setState("compared", comparison || product);
+        }
+      } catch (error) {
+        if (isCurrentRun(runId, widget)) {
+          widget.setState("compare_error", product);
+        }
       }
     }, 0);
   }

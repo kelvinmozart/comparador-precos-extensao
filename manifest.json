@@ -3,11 +3,14 @@
   "name": "Comparador de Preços Local",
   "version": "1.0.0",
   "description": "Extensão inicial com um card flutuante para páginas de produtos.",
+  "host_permissions": ["http://localhost:3000/*"],
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": [
         "src/productDetector.js",
+        "src/formatters.js",
+        "src/apiClient.js",
         "src/widget.js",
         "src/content.js"
       ],
