@@ -1,7 +1,7 @@
 {
   "name": "comparador-precos-backend",
   "version": "1.0.0",
-  "description": "Backend local simples para mockar comparacao de precos.",
+  "description": "Backend local simples para comparar ofertas parecidas.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js"

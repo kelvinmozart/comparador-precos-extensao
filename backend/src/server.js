@@ -3,11 +3,13 @@ const { URL } = require("url");
 const { handleCompareRequest } = require("./routes/compareRoutes");
 
 const DEFAULT_PORT = 3000;
+const LOG_PREFIX = "[backend][server]";
 
 function setCorsHeaders(response) {
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  response.setHeader("Access-Control-Allow-Private-Network", "true");
 }
 
 function sendJson(response, statusCode, payload) {
@@ -47,7 +49,14 @@ async function handleRequest(request, response) {
 
 function createServer() {
   return http.createServer((request, response) => {
-    handleRequest(request, response).catch(() => {
+    handleRequest(request, response).catch((error) => {
+      console.error(LOG_PREFIX, "Erro inesperado no servidor.", {
+        method: request.method,
+        url: request.url,
+        message: error.message,
+        stack: error.stack,
+      });
+
       sendJson(response, 500, {
         error: "internal_error",
         message: "Unexpected server error.",

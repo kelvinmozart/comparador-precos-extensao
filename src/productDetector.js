@@ -179,7 +179,11 @@
   }
 
   function findProductNodes(value) {
-    const products = [];
+    return findTypedNodes(value, "Product");
+  }
+
+  function findTypedNodes(value, typeName) {
+    const nodes = [];
     const seen = new Set();
 
     function visit(node) {
@@ -194,8 +198,8 @@
         return;
       }
 
-      if (hasType(node, "Product")) {
-        products.push(node);
+      if (hasType(node, typeName)) {
+        nodes.push(node);
       }
 
       Object.keys(node).forEach((key) => {
@@ -208,7 +212,7 @@
     }
 
     visit(value);
-    return products;
+    return nodes;
   }
 
   function getOfferPrice(offer) {
@@ -227,6 +231,26 @@
     return firstScalar(offer.priceCurrency, offer.priceSpecification?.priceCurrency);
   }
 
+  function getProductPrice(product) {
+    const directPrice = parsePrice(product?.price ?? product?.priceSpecification?.price);
+
+    if (directPrice !== null) {
+      return directPrice;
+    }
+
+    return parsePrice(getOfferPrice(chooseOffer(product?.offers)));
+  }
+
+  function getProductCurrency(product) {
+    const directCurrency = firstScalar(product?.priceCurrency, product?.priceSpecification?.priceCurrency);
+
+    if (directCurrency) {
+      return directCurrency;
+    }
+
+    return getOfferCurrency(chooseOffer(product?.offers));
+  }
+
   function chooseOffer(offers) {
     if (!offers) {
       return null;
@@ -236,6 +260,64 @@
     const objectOffers = offerList.filter((offer) => offer && typeof offer === "object");
 
     return objectOffers.find((offer) => parsePrice(getOfferPrice(offer)) !== null) || objectOffers[0] || null;
+  }
+
+  function hasAnyJsonLdType(values, typeNames) {
+    return values.some((value) => typeNames.some((typeName) => findTypedNodes(value, typeName).length > 0));
+  }
+
+  function getMetaContent(documentRef, selectors) {
+    if (!documentRef || typeof documentRef.querySelector !== "function") {
+      return null;
+    }
+
+    for (const selector of selectors) {
+      const element = documentRef.querySelector(selector);
+      const content = normalizeScalar(element?.content || element?.getAttribute?.("content"));
+
+      if (content) {
+        return content;
+      }
+    }
+
+    return null;
+  }
+
+  function isEditorialPage(jsonLdValues, documentRef) {
+    const editorialTypes = [
+      "Article",
+      "NewsArticle",
+      "BlogPosting",
+      "ReportageNewsArticle",
+      "OpinionNewsArticle",
+      "AnalysisNewsArticle",
+      "ReviewNewsArticle",
+    ];
+    const ogType = getMetaContent(documentRef, [
+      'meta[property="og:type"]',
+      'meta[name="og:type"]',
+    ]);
+
+    return (
+      hasAnyJsonLdType(jsonLdValues, editorialTypes) ||
+      normalizeTypeValue(ogType) === "article"
+    );
+  }
+
+  function isValidProductCandidate(product, options = {}) {
+    if (options.isEditorialPage) {
+      return false;
+    }
+
+    if (!normalizeScalar(product?.name)) {
+      return false;
+    }
+
+    if (getProductPrice(product) === null) {
+      return false;
+    }
+
+    return true;
   }
 
   function normalizeUrl(value, locationRef) {
@@ -324,16 +406,17 @@
     return score;
   }
 
-  function chooseProduct(products) {
+  function chooseProduct(products, options = {}) {
     return products
+      .filter((product) => isValidProductCandidate(product, options))
       .slice()
       .sort((left, right) => scoreProduct(right) - scoreProduct(left))[0] || null;
   }
 
   function normalizeProduct(product, locationRef) {
     const offer = chooseOffer(product.offers);
-    const price = parsePrice(getOfferPrice(offer));
-    const currency = getOfferCurrency(offer);
+    const price = getProductPrice(product);
+    const currency = getProductCurrency(product);
     const url = normalizeUrl(firstScalar(offer?.url, product.url), locationRef);
 
     return {
@@ -361,16 +444,20 @@
 
     const products = [];
     const scripts = getJsonLdScripts(documentToAnalyze);
+    const jsonLdValues = [];
 
     scripts.forEach((script) => {
       const parsed = parseJsonLdScript(script);
 
       if (parsed !== null) {
+        jsonLdValues.push(parsed);
         products.push(...findProductNodes(parsed));
       }
     });
 
-    const product = chooseProduct(products);
+    const product = chooseProduct(products, {
+      isEditorialPage: isEditorialPage(jsonLdValues, documentToAnalyze),
+    });
 
     if (!product) {
       return createEmptyResult(location);

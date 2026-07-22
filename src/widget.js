@@ -6,10 +6,10 @@
     loading: "Analisando produto...",
     detected: "Produto detectado nesta página.",
     comparing: "Buscando ofertas...",
-    compared: "Ofertas encontradas",
-    no_offers: "Nenhuma oferta encontrada",
+    compared: "Ofertas parecidas encontradas",
+    no_offers: "Produto detectado, mas nenhuma oferta parecida foi encontrada.",
     not_found: "Nenhum produto detectado nesta página.",
-    compare_error: "Não foi possível buscar ofertas agora.",
+    compare_error: "Backend indisponível. Tente novamente em instantes.",
     error: "Não foi possível analisar esta página.",
   };
   const PRODUCT_VISIBLE_STATES = new Set([
@@ -205,6 +205,20 @@
     return `similaridade: ${Math.round(percentage)}%`;
   }
 
+  function formatSourceLabel(source) {
+    const normalizedSource = sanitizeText(source, { fallback: "unknown" }).toLowerCase();
+
+    if (normalizedSource === "mercadolivre") {
+      return "Fonte: Mercado Livre";
+    }
+
+    if (normalizedSource === "mock") {
+      return "Fonte: mock local";
+    }
+
+    return `Fonte: ${sanitizeText(source, { fallback: "desconhecida", maxLength: 60 })}`;
+  }
+
   function formatUpdatedAt(value) {
     const rawValue = firstDefined(value);
     if (!rawValue) {
@@ -270,6 +284,10 @@
       .slice(0, MAX_OFFERS);
   }
 
+  function getLowestOffer(offers) {
+    return offers.find((offer) => offer.priceValue !== null) || offers[0] || null;
+  }
+
   function normalizeOffer(offer) {
     const source = offer || {};
     const price = firstDefined(source.price, source.detectedPrice, source.amount);
@@ -287,6 +305,9 @@
       price: formatPrice(price, currency),
       priceValue: parsePriceNumber(price),
       confidence: formatConfidence(source.confidence),
+      matchLabel: sanitizeText(source.matchLabel, { fallback: "Oferta parecida", maxLength: 40 }),
+      source: sanitizeText(source.source, { fallback: "unknown", maxLength: 40 }),
+      sourceLabel: formatSourceLabel(source.source),
       url: sanitizeText(firstDefined(source.url, source.link), { fallback: "", maxLength: 500 }),
     };
   }
@@ -297,15 +318,34 @@
     return leftPrice - rightPrice;
   }
 
+  function getUpdatedAtParts(payload) {
+    const parts = [];
+    const updatedAt = formatUpdatedAt(payload?.generatedAt);
+
+    if (updatedAt) {
+      parts.push(updatedAt);
+    }
+
+    if (payload?.cacheHit === true) {
+      parts.push("cache");
+    }
+
+    return parts;
+  }
+
   class PriceWidget {
     constructor(options = {}) {
       this.state = options.state || "loading";
       this.product = options.product || {};
       this.comparison = options.comparison || null;
+      this.onClose = typeof options.onClose === "function" ? options.onClose : null;
+      this.onHideSite = typeof options.onHideSite === "function" ? options.onHideSite : null;
       this.root = null;
       this.elements = {};
       this.handleCloseClick = this.close.bind(this);
+      this.handleHideSiteClick = this.hideSite.bind(this);
       this.handleToggleClick = this.toggleMinimized.bind(this);
+      this.handleHeaderClick = this.expandFromHeader.bind(this);
     }
 
     render() {
@@ -339,11 +379,14 @@
       closeButton.type = "button";
       closeButton.setAttribute("aria-label", "Fechar widget");
       closeButton.addEventListener("click", this.handleCloseClick);
+      header.addEventListener("click", this.handleHeaderClick);
 
       const body = createElement("div", "price-compare-widget__body");
       const status = createElement("p", "price-compare-widget__status");
       status.setAttribute("aria-live", "polite");
       status.setAttribute("aria-atomic", "true");
+      const notice = createElement("p", "price-compare-widget__notice");
+      notice.hidden = true;
 
       const details = createElement("div", "price-compare-widget__details");
 
@@ -364,21 +407,34 @@
         EMPTY_VALUE
       );
 
+      const bestPriceRow = createElement("div", "price-compare-widget__row price-compare-widget__best-price-row");
+      bestPriceRow.hidden = true;
+      const bestPriceLabel = createElement("span", "price-compare-widget__label", "Menor preço encontrado");
+      const bestPriceValue = createElement(
+        "span",
+        "price-compare-widget__value price-compare-widget__best-price",
+        EMPTY_VALUE
+      );
+
       const offersSection = createElement("div", "price-compare-widget__offers");
       offersSection.hidden = true;
-      const offersTitle = createElement("span", "price-compare-widget__section-title", "Ofertas");
+      const offersTitle = createElement("span", "price-compare-widget__section-title", "Ofertas parecidas");
       const offersList = createElement("div", "price-compare-widget__offers-list");
       const updatedAt = createElement("p", "price-compare-widget__updated-at");
       updatedAt.hidden = true;
+      const hideSiteButton = createElement("button", "price-compare-widget__hide-site", "Não mostrar neste site");
+      hideSiteButton.type = "button";
+      hideSiteButton.addEventListener("click", this.handleHideSiteClick);
 
       actions.append(toggleButton, closeButton);
       header.append(title, actions);
       nameRow.append(nameLabel, nameValue);
       priceRow.append(priceLabel, priceValue);
-      productSection.append(nameRow, priceRow);
+      bestPriceRow.append(bestPriceLabel, bestPriceValue);
+      productSection.append(nameRow, priceRow, bestPriceRow);
       offersSection.append(offersTitle, offersList, updatedAt);
       details.append(productSection, offersSection);
-      body.append(status, details);
+      body.append(status, notice, details, hideSiteButton);
       widget.append(header, body);
 
       document.body.appendChild(widget);
@@ -388,12 +444,18 @@
         body,
         closeButton,
         toggleButton,
+        header,
+        title,
         status,
+        notice,
         nameValue,
         priceValue,
+        bestPriceRow,
+        bestPriceValue,
         offersSection,
         offersList,
         updatedAt,
+        hideSiteButton,
       };
       this.setState(this.state, this.product);
 
@@ -417,16 +479,34 @@
         toggleButton.addEventListener("click", this.handleToggleClick);
       }
 
+      const hideSiteButton = this.root.querySelector(".price-compare-widget__hide-site");
+      if (hideSiteButton) {
+        hideSiteButton.removeEventListener("click", this.handleHideSiteClick);
+        hideSiteButton.addEventListener("click", this.handleHideSiteClick);
+      }
+
+      const header = this.root.querySelector(".price-compare-widget__header");
+      if (header) {
+        header.removeEventListener("click", this.handleHeaderClick);
+        header.addEventListener("click", this.handleHeaderClick);
+      }
+
       this.elements = {
         body: this.root.querySelector(".price-compare-widget__body"),
         closeButton,
         toggleButton,
+        header,
+        title: this.root.querySelector(".price-compare-widget__title"),
         status: this.root.querySelector(".price-compare-widget__status"),
+        notice: this.root.querySelector(".price-compare-widget__notice"),
         nameValue: this.root.querySelector(".price-compare-widget__product-name"),
         priceValue: this.root.querySelector(".price-compare-widget__product-price"),
+        bestPriceRow: this.root.querySelector(".price-compare-widget__best-price-row"),
+        bestPriceValue: this.root.querySelector(".price-compare-widget__best-price"),
         offersSection: this.root.querySelector(".price-compare-widget__offers"),
         offersList: this.root.querySelector(".price-compare-widget__offers-list"),
         updatedAt: this.root.querySelector(".price-compare-widget__updated-at"),
+        hideSiteButton,
       };
     }
 
@@ -464,8 +544,20 @@
           : EMPTY_VALUE;
       }
 
+      this.renderBestPrice(nextOffers);
       this.renderOffers(nextOffers);
-      this.renderUpdatedAt(baseState === "compared" ? payload?.generatedAt : "");
+      this.renderProviderNotice(payload);
+      this.renderUpdatedAt(baseState === "compared" ? payload : null);
+    }
+
+    renderBestPrice(offers) {
+      if (!this.elements.bestPriceRow || !this.elements.bestPriceValue) {
+        return;
+      }
+
+      const lowestOffer = getLowestOffer(offers);
+      this.elements.bestPriceValue.textContent = lowestOffer?.price || EMPTY_VALUE;
+      this.elements.bestPriceRow.hidden = !lowestOffer;
     }
 
     renderOffers(offers) {
@@ -487,11 +579,18 @@
           offer.title || "Oferta encontrada"
         );
         const footer = createElement("div", "price-compare-widget__offer-footer");
+        const meta = createElement("div", "price-compare-widget__offer-meta");
+        const matchLabel = createElement(
+          "span",
+          "price-compare-widget__offer-match",
+          offer.matchLabel || "Oferta parecida"
+        );
         const confidence = createElement(
           "span",
           "price-compare-widget__offer-confidence",
           offer.confidence || "similaridade não calculada"
         );
+        const source = createElement("span", "price-compare-widget__offer-source", offer.sourceLabel);
         const action = offer.url
           ? createElement("a", "price-compare-widget__offer-link", "Ver oferta")
           : createElement("span", "price-compare-widget__offer-link is-disabled", "Sem link");
@@ -505,20 +604,34 @@
         }
 
         offerHeader.append(store, price);
-        footer.append(confidence, action);
+        meta.append(matchLabel, confidence, source);
+        footer.append(meta, action);
         offerItem.append(offerHeader, title, footer);
         this.elements.offersList.appendChild(offerItem);
       });
     }
 
-    renderUpdatedAt(value) {
+    renderProviderNotice(payload) {
+      if (!this.elements.notice) {
+        return;
+      }
+
+      const fallbackUsed = payload?.provider?.fallbackUsed === true;
+
+      this.elements.notice.textContent = fallbackUsed
+        ? "Fonte real indisponível. Exibindo dados de teste."
+        : "";
+      this.elements.notice.hidden = !fallbackUsed;
+    }
+
+    renderUpdatedAt(payload) {
       if (!this.elements.updatedAt) {
         return;
       }
 
-      const formattedValue = formatUpdatedAt(value);
-      this.elements.updatedAt.textContent = formattedValue;
-      this.elements.updatedAt.hidden = !formattedValue;
+      const parts = getUpdatedAtParts(payload);
+      this.elements.updatedAt.textContent = parts.join(" · ");
+      this.elements.updatedAt.hidden = parts.length === 0;
     }
 
     toggleMinimized() {
@@ -527,6 +640,18 @@
       }
 
       this.setMinimized(this.root.dataset.minimized !== "true");
+    }
+
+    expandFromHeader(event) {
+      if (!this.root || this.root.dataset.minimized !== "true") {
+        return;
+      }
+
+      if (event.target?.closest?.("button, a")) {
+        return;
+      }
+
+      this.setMinimized(false);
     }
 
     setMinimized(isMinimized) {
@@ -544,9 +669,21 @@
         );
         this.elements.toggleButton.setAttribute("aria-expanded", String(!isMinimized));
       }
+
+      if (this.elements.title) {
+        this.elements.title.textContent = isMinimized ? "Comparador" : "Comparador de preços";
+      }
     }
 
-    close() {
+    hideSite() {
+      this.onHideSite?.();
+    }
+
+    destroy() {
+      this.close({ silent: true });
+    }
+
+    close(options = {}) {
       if (!this.root) {
         return;
       }
@@ -559,9 +696,21 @@
         this.elements.toggleButton.removeEventListener("click", this.handleToggleClick);
       }
 
+      if (this.elements.hideSiteButton) {
+        this.elements.hideSiteButton.removeEventListener("click", this.handleHideSiteClick);
+      }
+
+      if (this.elements.header) {
+        this.elements.header.removeEventListener("click", this.handleHeaderClick);
+      }
+
       this.root.remove();
       this.root = null;
       this.elements = {};
+
+      if (!options.silent) {
+        this.onClose?.();
+      }
     }
   }
 

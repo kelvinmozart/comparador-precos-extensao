@@ -87,6 +87,7 @@ function normalizeProduct(input) {
     brand: normalizeText(source.brand, { fallback: null, maxLength: 120 }),
     sku: normalizeText(source.sku, { fallback: null, maxLength: 120 }),
     gtin: normalizeText(source.gtin, { fallback: null, maxLength: 64 }),
+    mpn: normalizeText(source.mpn, { fallback: null, maxLength: 120 }),
   };
 }
 

@@ -1,13 +1,14 @@
-const { createMockComparison } = require("../services/mockCompareService");
-const { normalizeProduct } = require("../utils/normalizeProduct");
+const { compareProductPrices } = require("../services/compareService");
 
 const MAX_BODY_SIZE = 1024 * 1024;
+const LOG_PREFIX = "[backend][compare]";
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Private-Network": "true",
     "Content-Type": "application/json; charset=utf-8",
   });
   response.end(JSON.stringify(payload));
@@ -60,17 +61,34 @@ async function handleCompareRequest(request, response) {
     return;
   }
 
-  const product = normalizeProduct(body);
-
-  if (!product.name) {
-    sendJson(response, 400, {
-      error: "validation_error",
-      message: "Field name is required.",
+  try {
+    console.info(LOG_PREFIX, "Recebida requisição /compare.", {
+      name: body?.name,
+      brand: body?.brand,
+      price: body?.price,
+      currency: body?.currency,
     });
-    return;
-  }
 
-  sendJson(response, 200, createMockComparison(product));
+    const result = await compareProductPrices(body);
+
+    console.info(LOG_PREFIX, "Resposta /compare gerada.", {
+      results: Array.isArray(result.results) ? result.results.length : 0,
+      provider: result.provider,
+      cacheHit: result.cacheHit,
+    });
+
+    sendJson(response, 200, result);
+  } catch (error) {
+    console.error(LOG_PREFIX, "Erro ao processar /compare.", {
+      message: error.message,
+      stack: error.stack,
+    });
+
+    sendJson(response, 500, {
+      error: "compare_failed",
+      message: "Não foi possível buscar ofertas agora.",
+    });
+  }
 }
 
 module.exports = {
