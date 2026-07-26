@@ -1,7 +1,7 @@
 (function () {
   const WIDGET_ID = "price-compare-widget";
   const EMPTY_VALUE = "-";
-  const MAX_OFFERS = 5;
+  const MAX_OFFERS = 3;
   const STATE_MESSAGES = {
     loading: "Analisando produto...",
     detected: "Produto detectado nesta página.",
@@ -19,6 +19,7 @@
     "no_offers",
     "compare_error",
   ]);
+  const SHOW_PRODUCT_DETAILS = false;
 
   function createElement(tagName, className, textContent) {
     const element = document.createElement(tagName);
@@ -185,24 +186,26 @@
     }
   }
 
-  function formatConfidence(value) {
-    const formatter = window.priceCompareFormatters;
+  function formatSavingsText(offer) {
+    const difference = parsePriceNumber(offer?.priceDifferenceFromCurrent);
+    const percentage = parsePriceNumber(offer?.priceDifferencePercentFromCurrent);
 
-    if (typeof formatter?.formatConfidence === "function") {
-      const confidence = formatter.formatConfidence(value);
-      return confidence === "similaridade não calculada"
-        ? confidence
-        : `similaridade: ${confidence}`;
+    if (difference === null || difference >= 0) {
+      return "";
     }
 
-    const numericValue = parsePriceNumber(value);
+    const absoluteDifference = Math.abs(difference);
+    const formattedDifference = formatCurrency(absoluteDifference, offer?.currency || "BRL");
 
-    if (numericValue === null) {
-      return "similaridade não calculada";
+    if (percentage !== null && percentage < 0) {
+      return `${formattedDifference} mais barato (${Math.abs(percentage).toFixed(1).replace(".", ",")}%)`;
     }
 
-    const percentage = numericValue <= 1 ? numericValue * 100 : numericValue;
-    return `similaridade: ${Math.round(percentage)}%`;
+    return `${formattedDifference} mais barato que o preço atual`;
+  }
+
+  function formatSummarySavingsText(offer) {
+    return (offer?.savingsText || formatSavingsText(offer)).replace(/ que o .* atual/i, "");
   }
 
   function formatSourceLabel(source) {
@@ -280,12 +283,24 @@
     return offers
       .map(normalizeOffer)
       .filter((offer) => offer.store || offer.title || offer.price || offer.url)
-      .sort(compareOffersByPrice)
+      .sort(compareOffersByRank)
       .slice(0, MAX_OFFERS);
   }
 
   function getLowestOffer(offers) {
-    return offers.find((offer) => offer.priceValue !== null) || offers[0] || null;
+    return offers.find((offer) => offer.isBestPrice) ||
+      offers.find((offer) => offer.priceValue !== null) ||
+      offers[0] ||
+      null;
+  }
+
+  function hasMockSource(payload, offers = []) {
+    const providerName = sanitizeText(payload?.provider?.name, { fallback: "" }).toLowerCase();
+    const providers = Array.isArray(payload?.providers) ? payload.providers : [];
+
+    return providerName.includes("mock") ||
+      providers.some((provider) => sanitizeText(provider?.name, { fallback: "" }).toLowerCase() === "mock") ||
+      offers.some((offer) => offer.source.toLowerCase() === "mock");
   }
 
   function normalizeOffer(offer) {
@@ -304,15 +319,23 @@
       }),
       price: formatPrice(price, currency),
       priceValue: parsePriceNumber(price),
-      confidence: formatConfidence(source.confidence),
       matchLabel: sanitizeText(source.matchLabel, { fallback: "Oferta parecida", maxLength: 40 }),
       source: sanitizeText(source.source, { fallback: "unknown", maxLength: 40 }),
       sourceLabel: formatSourceLabel(source.source),
+      savingsText: formatSavingsText(source),
+      isBestPrice: source.isBestPrice === true,
+      rank: Number.isFinite(source.rank) ? source.rank : null,
       url: sanitizeText(firstDefined(source.url, source.link), { fallback: "", maxLength: 500 }),
     };
   }
 
-  function compareOffersByPrice(left, right) {
+  function compareOffersByRank(left, right) {
+    if (left.rank !== null || right.rank !== null) {
+      const leftRank = left.rank === null ? Number.POSITIVE_INFINITY : left.rank;
+      const rightRank = right.rank === null ? Number.POSITIVE_INFINITY : right.rank;
+      return leftRank - rightRank;
+    }
+
     const leftPrice = left.priceValue === null ? Number.POSITIVE_INFINITY : left.priceValue;
     const rightPrice = right.priceValue === null ? Number.POSITIVE_INFINITY : right.priceValue;
     return leftPrice - rightPrice;
@@ -320,14 +343,16 @@
 
   function getUpdatedAtParts(payload) {
     const parts = [];
+
+    if (payload?.cacheHit === true) {
+      parts.push("Resultado em cache");
+      return parts;
+    }
+
     const updatedAt = formatUpdatedAt(payload?.generatedAt);
 
     if (updatedAt) {
       parts.push(updatedAt);
-    }
-
-    if (payload?.cacheHit === true) {
-      parts.push("cache");
     }
 
     return parts;
@@ -415,6 +440,8 @@
         "price-compare-widget__value price-compare-widget__best-price",
         EMPTY_VALUE
       );
+      const bestPriceSavings = createElement("span", "price-compare-widget__summary-savings");
+      bestPriceSavings.hidden = true;
 
       const offersSection = createElement("div", "price-compare-widget__offers");
       offersSection.hidden = true;
@@ -430,7 +457,8 @@
       header.append(title, actions);
       nameRow.append(nameLabel, nameValue);
       priceRow.append(priceLabel, priceValue);
-      bestPriceRow.append(bestPriceLabel, bestPriceValue);
+      bestPriceRow.append(bestPriceLabel, bestPriceValue, bestPriceSavings);
+      productSection.hidden = !SHOW_PRODUCT_DETAILS;
       productSection.append(nameRow, priceRow, bestPriceRow);
       offersSection.append(offersTitle, offersList, updatedAt);
       details.append(productSection, offersSection);
@@ -452,6 +480,7 @@
         priceValue,
         bestPriceRow,
         bestPriceValue,
+        bestPriceSavings,
         offersSection,
         offersList,
         updatedAt,
@@ -503,6 +532,7 @@
         priceValue: this.root.querySelector(".price-compare-widget__product-price"),
         bestPriceRow: this.root.querySelector(".price-compare-widget__best-price-row"),
         bestPriceValue: this.root.querySelector(".price-compare-widget__best-price"),
+        bestPriceSavings: this.root.querySelector(".price-compare-widget__summary-savings"),
         offersSection: this.root.querySelector(".price-compare-widget__offers"),
         offersList: this.root.querySelector(".price-compare-widget__offers-list"),
         updatedAt: this.root.querySelector(".price-compare-widget__updated-at"),
@@ -515,7 +545,7 @@
       const nextOffers = baseState === "compared" ? normalizeOffers(payload) : [];
       const nextState = baseState === "compared" && nextOffers.length === 0 ? "no_offers" : baseState;
       const nextProduct = normalizeProduct(getProductPayload(payload, this.product));
-      const shouldShowProduct = PRODUCT_VISIBLE_STATES.has(nextState);
+      const shouldShowProduct = SHOW_PRODUCT_DETAILS && PRODUCT_VISIBLE_STATES.has(nextState);
 
       this.state = nextState;
       this.product = nextProduct;
@@ -546,7 +576,7 @@
 
       this.renderBestPrice(nextOffers);
       this.renderOffers(nextOffers);
-      this.renderProviderNotice(payload);
+      this.renderProviderNotice(payload, nextOffers);
       this.renderUpdatedAt(baseState === "compared" ? payload : null);
     }
 
@@ -556,8 +586,14 @@
       }
 
       const lowestOffer = getLowestOffer(offers);
+      const savingsText = lowestOffer ? formatSummarySavingsText(lowestOffer) : "";
       this.elements.bestPriceValue.textContent = lowestOffer?.price || EMPTY_VALUE;
       this.elements.bestPriceRow.hidden = !lowestOffer;
+
+      if (this.elements.bestPriceSavings) {
+        this.elements.bestPriceSavings.textContent = savingsText;
+        this.elements.bestPriceSavings.hidden = !savingsText;
+      }
     }
 
     renderOffers(offers) {
@@ -573,11 +609,13 @@
         const offerHeader = createElement("div", "price-compare-widget__offer-header");
         const store = createElement("span", "price-compare-widget__offer-store", offer.store || "Oferta");
         const price = createElement("span", "price-compare-widget__offer-price", offer.price || EMPTY_VALUE);
+        const badge = createElement("span", "price-compare-widget__offer-badge", "Melhor preco");
         const title = createElement(
           "div",
           "price-compare-widget__offer-title",
           offer.title || "Oferta encontrada"
         );
+        const savings = createElement("div", "price-compare-widget__offer-savings", offer.savingsText);
         const footer = createElement("div", "price-compare-widget__offer-footer");
         const meta = createElement("div", "price-compare-widget__offer-meta");
         const matchLabel = createElement(
@@ -585,17 +623,14 @@
           "price-compare-widget__offer-match",
           offer.matchLabel || "Oferta parecida"
         );
-        const confidence = createElement(
-          "span",
-          "price-compare-widget__offer-confidence",
-          offer.confidence || "similaridade não calculada"
-        );
         const source = createElement("span", "price-compare-widget__offer-source", offer.sourceLabel);
         const action = offer.url
           ? createElement("a", "price-compare-widget__offer-link", "Ver oferta")
           : createElement("span", "price-compare-widget__offer-link is-disabled", "Sem link");
 
         title.title = offer.title || "";
+        badge.hidden = !offer.isBestPrice;
+        savings.hidden = !offer.savingsText;
 
         if (offer.url) {
           action.href = offer.url;
@@ -604,24 +639,40 @@
         }
 
         offerHeader.append(store, price);
-        meta.append(matchLabel, confidence, source);
+        meta.append(matchLabel, source);
+        if (offer.isBestPrice) {
+          meta.prepend(badge);
+        }
         footer.append(meta, action);
-        offerItem.append(offerHeader, title, footer);
+        offerItem.append(offerHeader, title, savings, footer);
         this.elements.offersList.appendChild(offerItem);
       });
     }
 
-    renderProviderNotice(payload) {
+    renderProviderNotice(payload, offers = []) {
       if (!this.elements.notice) {
         return;
       }
 
       const fallbackUsed = payload?.provider?.fallbackUsed === true;
+      const usesMockData = fallbackUsed || hasMockSource(payload, offers);
 
-      this.elements.notice.textContent = fallbackUsed
-        ? "Fonte real indisponível. Exibindo dados de teste."
-        : "";
-      this.elements.notice.hidden = !fallbackUsed;
+      if (!usesMockData) {
+        this.elements.notice.textContent = "";
+        this.elements.notice.hidden = true;
+        return;
+      }
+
+      if (!fallbackUsed) {
+        this.elements.notice.textContent = "Dados de teste.";
+        this.elements.notice.hidden = false;
+        return;
+      }
+
+      this.elements.notice.textContent = "Fonte real indisponivel. Dados de teste.";
+      this.elements.notice.hidden = false;
+      return;
+
     }
 
     renderUpdatedAt(payload) {

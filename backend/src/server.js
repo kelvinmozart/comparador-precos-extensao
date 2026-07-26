@@ -1,9 +1,9 @@
 const http = require("http");
 const { URL } = require("url");
 const { handleCompareRequest } = require("./routes/compareRoutes");
+const logger = require("./utils/logger");
 
 const DEFAULT_PORT = 3000;
-const LOG_PREFIX = "[backend][server]";
 
 function setCorsHeaders(response) {
   response.setHeader("Access-Control-Allow-Origin", "*");
@@ -50,11 +50,10 @@ async function handleRequest(request, response) {
 function createServer() {
   return http.createServer((request, response) => {
     handleRequest(request, response).catch((error) => {
-      console.error(LOG_PREFIX, "Erro inesperado no servidor.", {
+      logger.error("Erro inesperado no servidor.", {
         method: request.method,
         url: request.url,
         message: error.message,
-        stack: error.stack,
       });
 
       sendJson(response, 500, {
@@ -70,7 +69,10 @@ if (require.main === module) {
   const server = createServer();
 
   server.listen(port, () => {
-    console.log(`Backend local rodando em http://localhost:${port}`);
+    logger.info("Backend local iniciado.", {
+      url: `http://localhost:${port}`,
+      logLevel: process.env.LOG_LEVEL || "info",
+    });
   });
 }
 

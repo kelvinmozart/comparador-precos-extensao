@@ -1,6 +1,7 @@
 const http = require("http");
 const https = require("https");
 const { normalizeSearchQuery } = require("../utils/normalizeSearchQuery");
+const logger = require("../utils/logger");
 
 const DEFAULT_SEARCH_BASE_URL = "https://api.mercadolibre.com/sites/MLB/search";
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -141,8 +142,11 @@ function mapResultToOffer(item) {
   };
 }
 
-function mapSearchResponse(payload) {
+function mapSearchResponse(payload, context = {}) {
   if (!payload || !Array.isArray(payload.results)) {
+    logger.warn("Mercado Livre retornou formato inesperado.", {
+      requestId: context.requestId,
+    });
     throw new Error("Mercado Livre API returned an unexpected response format");
   }
 
@@ -151,7 +155,7 @@ function mapSearchResponse(payload) {
     .filter((offer) => offer && offer.title && offer.price !== null && offer.url);
 }
 
-async function searchOffers(product) {
+async function searchOffers(product, context = {}) {
   const searchQuery = normalizeSearchQuery(product);
 
   if (!searchQuery) {
@@ -163,9 +167,8 @@ async function searchOffers(product) {
 
   try {
     const payload = await fetchJson(url, timeoutMs);
-    return mapSearchResponse(payload);
+    return mapSearchResponse(payload, context);
   } catch (error) {
-    console.error(`[mercadoLivrePriceProvider] ${error.message}`);
     throw error;
   }
 }

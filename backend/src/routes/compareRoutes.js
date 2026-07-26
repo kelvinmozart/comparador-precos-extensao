@@ -1,7 +1,7 @@
 const { compareProductPrices } = require("../services/compareService");
+const logger = require("../utils/logger");
 
 const MAX_BODY_SIZE = 1024 * 1024;
-const LOG_PREFIX = "[backend][compare]";
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -45,6 +45,7 @@ function readJsonBody(request) {
 }
 
 async function handleCompareRequest(request, response) {
+  const requestId = logger.createRequestId();
   let body;
 
   try {
@@ -52,7 +53,13 @@ async function handleCompareRequest(request, response) {
   } catch (error) {
     const statusCode = error.message === "body_too_large" ? 413 : 400;
 
+    logger.warn("Corpo invalido recebido em /compare.", {
+      requestId,
+      error: error.message,
+    });
+
     sendJson(response, statusCode, {
+      requestId,
       error: error.message,
       message: error.message === "body_too_large"
         ? "Request body is too large."
@@ -62,31 +69,34 @@ async function handleCompareRequest(request, response) {
   }
 
   try {
-    console.info(LOG_PREFIX, "Recebida requisição /compare.", {
+    logger.info("Requisicao /compare recebida.", {
+      requestId,
       name: body?.name,
       brand: body?.brand,
       price: body?.price,
       currency: body?.currency,
     });
 
-    const result = await compareProductPrices(body);
+    const result = await compareProductPrices(body, { requestId });
 
-    console.info(LOG_PREFIX, "Resposta /compare gerada.", {
+    logger.info("Resposta /compare enviada.", {
+      requestId,
       results: Array.isArray(result.results) ? result.results.length : 0,
-      provider: result.provider,
+      provider: result.provider?.name,
       cacheHit: result.cacheHit,
     });
 
     sendJson(response, 200, result);
   } catch (error) {
-    console.error(LOG_PREFIX, "Erro ao processar /compare.", {
+    logger.error("Erro ao processar /compare.", {
+      requestId,
       message: error.message,
-      stack: error.stack,
     });
 
     sendJson(response, 500, {
+      requestId,
       error: "compare_failed",
-      message: "Não foi possível buscar ofertas agora.",
+      message: "Nao foi possivel buscar ofertas agora.",
     });
   }
 }

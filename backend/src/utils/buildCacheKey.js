@@ -7,12 +7,26 @@ function normalizePart(value) {
     .replace(/^-+|-+$/g, "");
 }
 
-function buildCacheKey(product, providerName) {
-  const providerPart = normalizePart(providerName) || "unknown";
+function normalizeProviderPart(providerNames) {
+  const names = Array.isArray(providerNames) ? providerNames : [providerNames];
+  const normalizedNames = names
+    .map(normalizePart)
+    .filter(Boolean);
+
+  return normalizedNames.length > 0 ? normalizedNames.join("+") : "unknown";
+}
+
+function buildCacheKey(product, providerNames) {
+  const providerPart = normalizeProviderPart(providerNames);
   const gtinPart = normalizePart(product?.gtin);
   const brandPart = normalizePart(product?.brand);
   const namePart = normalizePart(product?.name);
-  const productPart = [gtinPart, brandPart, namePart].filter(Boolean).join("-");
+  const shouldUseBrandPart = brandPart && !namePart.split("-").includes(brandPart);
+  const productPart = [
+    gtinPart,
+    shouldUseBrandPart ? brandPart : "",
+    namePart,
+  ].filter(Boolean).join("-");
 
   if (!productPart) {
     return null;
@@ -24,4 +38,5 @@ function buildCacheKey(product, providerName) {
 module.exports = {
   buildCacheKey,
   normalizePart,
+  normalizeProviderPart,
 };
